@@ -1,0 +1,81 @@
+UNIVERSAL TEXT EXTRACTION REPORT
+==================================================
+Source: https://res.cloudinary.com/dazphdgdr/raw/upload/v1754548697/submitted_files/1754548694_83ff9f4c_doc.docx
+File Type: DOCX
+Extraction Method: python-docx
+Source Type: URL
+Paragraphs: 52
+Tables: 3
+Images Found: 1
+Images Processed with OCR: 1
+Main Text Characters: 2694
+OCR Text Characters: 55
+Total Characters: 2749
+==================================================
+MAIN EXTRACTED TEXT:
+------------------------------
+From: Nick Harmon <Nicholas.Harmon@heathrow.com> 
+Sent: 21 December 2024 13:46
+To: DvC Participants 2024 <DvCParticipants2024@heathrow.com>
+Subject: NOTAM nbrs (below) applied for 22Dec
+Classification: Internal
+Good afternoon,
+Please find below the NOTAM numbers (in red) issued for tomorrows operation. 
+A9136/24
+Capacity Reduction (From 0600-2200)
+DUE STRONG WINDS AD IS OPERATING UNDER DEMAND REDUCTION.
+PARTICIPATING AIRLINE OPERATORS ARE REQUIRED TO REDUCE THEIR
+SCHEDULES BY 10 PERCENT
+A9137/24
+Diversions (from 0430-2359)
+DUE TO STRONG WINDS AD IS NOT AVAILABLE FOR DIVERTED
+TRAFFIC. HOME BASED CARRIERS AND EMERGENCY TRAFFIC ARE EXEMPT FROM
+THIS REQUIREMENT. REFERENCE UKAIP EGLL AD2.20 SECTION 1 PARAGRAPH K
+ .
+A9139/24
+Pre 0602 Arrivals (from 0430-0602)
+.DUE TO STRONG WINDS ALL AIRCRAFT ARE PERMITTED TO LAND BEFORE
+0602 BUT CANNOT LAND PRIOR TO 0431. EMERGENCY TRAFFIC EXEMPT
+FROM ANY TIME RESTRICTIONS
+A9138/24
+Ad Hoc slots (from 0602-2300)
+AD HOC SLOT BOOKING AND FLIGHT RESCHEDULE SLOTS ARE SUSPENDED. ALL
+ENQUIRIES TO AIRCRAFT DUTY MANAGER +44 7525 825585)
+Many thanks 
+Nick Harmon
+Aircraft Operations Duty Manager
+Airport Operations
+Heathrow Airport
+The Compass Centre, Nelson Road
+Hounslow, Middlesex, TW6 2GW
+t: +44 (0)7525 825585
+CONFIDENTIAL NOTICE: The information contained in this email and accompanying data are intended only for the person or entity to which it is addressed and may contain confidential and / or privileged material. If you are not the intended recipient of this email, the use of this information or any disclosure, copying or distribution is prohibited and may be unlawful. If you received this in error, please contact the sender and delete all copies of this message and attachments.
+
+Please note that Heathrow Airport Holdings Limited and its subsidiaries ("Heathrow") monitors incoming and outgoing mail for compliance with its Information Security policy. This includes scanning emails for computer viruses.
+
+COMPANY PARTICULARS: For particulars of Heathrow companies, please visit http://www.heathrowairport.com/about-us. For information about Heathrow Airport, please visit www.heathrowairport.com
+
+Heathrow Airport Holdings Limited is a private limited company registered in England under Company Number 05757208, with the Registered Office at The Compass Centre, Nelson Road, Hounslow, Middlesex, TW6 2GW.
+
+[TABLE 1]
+[END TABLE 1]
+
+
+[TABLE 2]
+[END TABLE 2]
+
+
+[TABLE 3]
+You're receiving this message because you're a member of the DvC Participants 2024 group from Heathrow Airport Ltd. To take part in this conversation, reply all to this message.
+View group files   |   Leave group   |   Learn more about Microsoft 365 Groups
+[END TABLE 3]
+
+
+OCR EXTRACTED TEXT (FROM IMAGES):
+----------------------------------------
+
+[IMAGE 1]Heathrow
+5
+CELEBRATING 75 YEARS[END IMAGE 1]
+
+
