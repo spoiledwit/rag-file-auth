@@ -41,12 +41,12 @@ COPY requirements-prod.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements-prod.txt
 
-# Copy entrypoint script first and make it executable
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
 # Copy project files
 COPY . .
+
+# Copy entrypoint script and ensure it has proper permissions
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Create necessary directories
 RUN mkdir -p staticfiles static extracted_texts temp_extracts
@@ -54,12 +54,10 @@ RUN mkdir -p staticfiles static extracted_texts temp_extracts
 # Collect static files (with WhiteNoise compression)
 RUN python manage.py collectstatic --noinput
 
-# Create a non-root user
+# Create a non-root user and fix permissions
 RUN useradd -m -u 1000 django && \
-    chown -R django:django /app
-
-# Switch to non-root user
-USER django
+    chown -R django:django /app && \
+    chmod +x /app/entrypoint.sh
 
 # Expose port
 EXPOSE 8001
