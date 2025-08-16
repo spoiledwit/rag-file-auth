@@ -18,8 +18,8 @@ RUN apt-get update && apt-get install -y \
     # Build essentials for Python packages
     gcc \
     g++ \
-    # Image processing libraries
-    libgl1-mesa-glx \
+    # Image processing libraries (updated for Debian Trixie)
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -29,6 +29,8 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     # PDF processing
     poppler-utils \
+    # Additional dependencies for Python packages
+    curl \
     # Clean up
     && rm -rf /var/lib/apt/lists/*
 
