@@ -559,6 +559,9 @@ class DocxTextExtractor:
             self.logger.warning(f"Failed to clean up temporary files: {e}")
 
 
+# Setup module logger
+logger = logging.getLogger(__name__)
+
 def process_docx_file(docx_path: str, output_dir: str = "extracted_texts", use_easyocr: bool = True) -> Dict[str, Any]:
     """
     Process a DOCX file and extract all text content.
@@ -588,20 +591,20 @@ def process_docx_file(docx_path: str, output_dir: str = "extracted_texts", use_e
         output_file = extractor.save_extracted_text(results)
         results['output_file'] = output_file
         
-        print(f"DOCX text extraction completed!")
-        print(f"Results saved to: {output_file}")
-        print(f"Total paragraphs processed: {results['native_text'].get('total_paragraphs', 0)}")
-        print(f"Images found and processed: {len(results['images'])}")
-        print(f"Total characters extracted: {len(results['combined_text'])}")
+        logger.info(f"DOCX text extraction completed!")
+        logger.info(f"Results saved to: {output_file}")
+        logger.info(f"Total paragraphs processed: {results['native_text'].get('total_paragraphs', 0)}")
+        logger.info(f"Images found and processed: {len(results['images'])}")
+        logger.info(f"Total characters extracted: {len(results['combined_text'])}")
         
         # Clean up temporary images
         extractor.cleanup_temp_files()
-        print(f"Cleaned up temporary files")
+        logger.info(f"Cleaned up temporary files")
         
         return results
         
     except Exception as e:
-        print(f"Error processing DOCX: {e}")
+        logger.error(f"Error processing DOCX: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -611,13 +614,18 @@ def main():
     """
     Example usage of the DOCX text extraction pipeline.
     """
+    # Setup logging for main execution
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     docx_path = "doc.docx"  # Replace with your DOCX path
     
     try:
         results = process_docx_file(docx_path)
-        print("DOCX processing completed successfully!")
+        logger.info("DOCX processing completed successfully!")
     except Exception as e:
-        print(f"DOCX processing failed: {e}")
+        logger.error(f"DOCX processing failed: {e}")
 
 
 if __name__ == "__main__":

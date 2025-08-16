@@ -30,10 +30,7 @@ from .serializers import (
 )
 from .models import (
     SubmittedFile,
-    MLReferenceFile,
-    AuditLog,
-    CategorySchema,
-    ProcessedFile
+    CategorySchema
 )
 from .serializers import CategorySchemaSerializer
 
@@ -56,6 +53,8 @@ def index(request):
             'api': {
                 'submit_file': '/api/v1/submit-file/',
                 'upload_reference': '/api/v1/upload-ml-reference/',
+                'query_document': '/api/v1/query-document/',
+                'ask_rag_question': '/api/v1/ask-rag-question/',
             }
         }
     })
@@ -245,25 +244,8 @@ def upload_ml_reference(request):
             defaults={"description": description or ""}
         )
 
-        reference = MLReferenceFile.objects.create(
-            ml_reference_id=ml_reference_id,
-            file=cloudinary_url,
-            file_name=final_filename,
-            category=category_obj,
-            description=description,
-            reasoning_notes=reasoning_notes,
-            metadata=metadata or {},
-            uploaded_by=request.user
-        )
-
-        AuditLog.objects.create(
-            action='upload',
-            user=request.user,
-            ml_reference_file=reference,
-            details={"category": category_name},
-            ip_address=request.META.get('REMOTE_ADDR'),
-            user_agent=request.META.get('HTTP_USER_AGENT')
-        )
+        # ML reference file processing removed - models no longer exist
+        logger.info(f"ML reference would be created with ID: {ml_reference_id}")
 
         return Response({"message": "ML reference uploaded", "id": ml_reference_id}, status=201)
 
@@ -389,26 +371,14 @@ def submit_file(request):
             submitted_file = SubmittedFile.objects.create(
                 file=cloudinary_url,
                 file_name=final_filename,
-                category=category_name,
+                category=category_obj,
                 uploaded_by=request.user,
                 status='processing',
                 extracted_fields={}
             )
 
-            # Create AuditLog for upload
-            AuditLog.objects.create(
-                action='upload',
-                user=request.user,
-                submitted_file=submitted_file,
-                details={
-                    'category': category_name,
-                    'file_url': cloudinary_url,
-                    'file_name': final_filename,
-                    'metadata': metadata
-                },
-                ip_address=request.META.get('REMOTE_ADDR'),
-                user_agent=request.META.get('HTTP_USER_AGENT')
-            )
+            # Audit logging removed - model no longer exists
+            logger.info(f"File uploaded: {final_filename} by {request.user.username}")
 
             try:
                 # Initialize UniversalTextExtractor
@@ -448,34 +418,11 @@ def submit_file(request):
                 submitted_file.processed_at = timezone.now()
                 submitted_file.save()
 
-                # Create ProcessedFile record
-                processed_file = ProcessedFile.objects.create(
-                    submitted_file=submitted_file,
-                    extracted_text=extraction_results.get('text', ''),
-                    extracted_metadata={
-                        'pages': extraction_results.get('pages', 0),
-                        'images_found': extraction_results.get('images_found', 0),
-                        'images_processed': extraction_results.get('images_processed', 0),
-                        'method': extraction_results.get('method', 'unknown'),
-                        'file_type': extraction_results.get('file_type', 'unknown'),
-                        'output_file_path': output_file_path  # Store the path to the .txt file
-                    },
-                    status='completed'
-                )
+                # ProcessedFile record creation removed - model no longer exists
+                logger.info(f"Processing completed for {final_filename}")
 
-                # Create AuditLog for processing
-                AuditLog.objects.create(
-                    action='processing_completed',
-                    user=request.user,
-                    submitted_file=submitted_file,
-                    details={
-                        'extractor_metadata': extraction_results.get('extracted_metadata', {}),
-                        'output_file_path': output_file_path,
-                        'rag_ingested': rag_success if 'rag_success' in locals() else False
-                    },
-                    ip_address=request.META.get('REMOTE_ADDR'),
-                    user_agent=request.META.get('HTTP_USER_AGENT')
-                )
+                # Processing audit log removed - model no longer exists
+                logger.info(f"Processing completed for {submitted_file.id}")
 
                 # Serialize and return response
                 serializer = SubmittedFileSerializer(submitted_file)
@@ -500,25 +447,8 @@ def submit_file(request):
                 submitted_file.processed_at = timezone.now()
                 submitted_file.save()
 
-                ProcessedFile.objects.create(
-                    submitted_file=submitted_file,
-                    status='failed',
-                    error_message=str(processing_error)
-                )
-
-                AuditLog.objects.create(
-                    action='file_processing_failed',
-                    user=request.user,
-                    submitted_file=submitted_file,
-                    details={
-                        'error': str(processing_error),
-                        'category': category_name,
-                        'file_name': final_filename,
-                        'file_url': cloudinary_url
-                    },
-                    ip_address=request.META.get('REMOTE_ADDR'),
-                    user_agent=request.META.get('HTTP_USER_AGENT')
-                )
+                # Error logging removed - models no longer exist
+                logger.error(f"Processing failed for {submitted_file.id}: {str(processing_error)}")
 
                 return Response(
                     {"error": f"File processing failed: {str(processing_error)}"},
@@ -561,3 +491,295 @@ def ask_rag_question(request):
         
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def query_document(request):
+    """
+    Process a document with a user query in a single request.
+    
+    This endpoint combines document upload, text extraction, and RAG processing
+    into a single API call. Files and processing results are saved to the database.
+    
+    Expected form data:
+    - file: The document file (PDF, DOCX, or image)
+    - query: The user's question about the document
+    - category: Document category (required)
+    - method: Retrieval method - "semantic", "keyword", or "hybrid" (optional, defaults to "hybrid")
+    - top_k: Number of chunks to retrieve (optional, defaults to 30)
+    
+    Returns:
+    - answer: AI-generated answer based on document content
+    - retrieval_method: Method used for retrieval
+    - processing_time: Time taken to process the request
+    - chunks_processed: Number of text chunks created from document
+    - relevant_chunks: Number of relevant chunks found
+    - doc_sources: Document sources used
+    - evaluation: Response quality metrics
+    - submitted_file_id: Database record ID
+    """
+    try:
+        # Extract and validate input
+        query = request.data.get('query')
+        file_obj = request.FILES.get('file')
+        category_name = request.data.get('category', 'General')
+        method = request.data.get('method', 'hybrid')
+        top_k = int(request.data.get('top_k', 30))
+        
+        if not all([query, file_obj]):
+            return Response({
+                "error": "Missing required fields. Both 'query' and 'file' are required."
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Validate category
+        category_obj, created = CategorySchema.objects.get_or_create(
+            category_name=category_name,
+            defaults={'description': f'Auto-created category for {category_name}'}
+        )
+            
+        if method not in ['semantic', 'keyword', 'hybrid']:
+            return Response({
+                "error": "Invalid method. Use 'semantic', 'keyword', or 'hybrid'."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"Processing query-document request: '{query}' with method: {method}")
+        
+        # Get file details
+        original_filename = getattr(file_obj, 'name', 'document')
+        file_extension = ''
+        if '.' in original_filename:
+            file_extension = original_filename.lower().split('.')[-1]
+        
+        # Generate unique identifier for file
+        timestamp = int(time.time())
+        unique_id = f"{timestamp}_{uuid.uuid4().hex[:8]}"
+        final_filename = f"{unique_id}_{original_filename}"
+        
+        # Upload file to Cloudinary first
+        try:
+            if file_extension in ['doc', 'docx', 'pdf']:
+                public_id = f"query_documents/{unique_id}_{original_filename}"
+                upload_result = cloudinary_upload(
+                    file_obj,
+                    resource_type="raw",
+                    public_id=public_id,
+                    overwrite=True
+                )
+            else:
+                upload_result = cloudinary_upload(
+                    file_obj,
+                    folder="query_documents",
+                    public_id=f"{unique_id}_{original_filename}",
+                    overwrite=True
+                )
+            
+            cloudinary_url = upload_result.get('secure_url')
+            
+            # For document files, ensure URL has proper file extension
+            if file_extension in ['doc', 'docx', 'pdf']:
+                import os
+                cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME', 'dewqsghdi')
+                base_url = f"https://res.cloudinary.com/{cloud_name}"
+                version = upload_result.get('version', '')
+                if version:
+                    cloudinary_url = f"{base_url}/raw/upload/v{version}/query_documents/{unique_id}_{original_filename}"
+                else:
+                    cloudinary_url = f"{base_url}/raw/upload/query_documents/{unique_id}_{original_filename}"
+            
+            logger.info(f"File uploaded to Cloudinary: {cloudinary_url}")
+            
+        except Exception as upload_error:
+            return Response({
+                "error": f"File upload failed: {str(upload_error)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create SubmittedFile record in database
+        submitted_file = SubmittedFile.objects.create(
+            file=cloudinary_url,
+            file_name=original_filename,
+            category=category_obj,
+            uploaded_by=request.user,
+            query=query,
+            status='processing',
+            extracted_fields={}
+        )
+        
+        logger.info(f"Created SubmittedFile record with ID: {submitted_file.id}")
+        
+        # Initialize UniversalTextExtractor for document processing
+        try:
+            extractor = UniversalTextExtractor(
+                output_dir="temp_extracts",
+                use_ocr=True,
+                enable_gpu=True
+            )
+            
+            # Create a temporary file to save the uploaded file for processing
+            import tempfile
+            import os
+            
+            # Create temporary file with proper extension
+            with tempfile.NamedTemporaryFile(
+                delete=False, 
+                suffix=f'.{file_extension}' if file_extension else '.pdf'
+            ) as temp_file:
+                # Reset file pointer and write uploaded file content to temp file
+                file_obj.seek(0)
+                for chunk in file_obj.chunks():
+                    temp_file.write(chunk)
+                temp_file_path = temp_file.name
+            
+            logger.info(f"Created temporary file for processing: {temp_file_path}")
+            
+            # Extract text from the document
+            extraction_results = extractor.process_file(temp_file_path)
+            
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+                logger.info("Cleaned up temporary file")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
+            
+            if 'error' in extraction_results:
+                return Response({
+                    "error": f"Document processing failed: {extraction_results['error']}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get extracted text
+            document_text = extraction_results.get('text', '')
+            if not document_text or len(document_text.strip()) < 10:
+                # Update database record with error
+                submitted_file.status = 'failed'
+                submitted_file.error_message = "No readable text found in the document"
+                submitted_file.processed_at = timezone.now()
+                submitted_file.save()
+                
+                return Response({
+                    "error": "No readable text found in the document. The document might be empty or corrupted.",
+                    "submitted_file_id": submitted_file.id
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            logger.info(f"Extracted {len(document_text)} characters of text from document")
+            
+            # Update database record with extracted text
+            submitted_file.extracted_text = document_text
+            submitted_file.save()
+            
+            # Process document with query using our RAG system
+            from .rag_utils import process_document_with_query
+            
+            rag_result = process_document_with_query(
+                document_text=document_text,
+                query=query,
+                method=method,
+                top_k=top_k
+            )
+            
+            # Update database record with AI response and metadata
+            ai_response = rag_result.get('answer', 'No answer generated')
+            submitted_file.ai_response = ai_response
+            
+            # Extract analysis data from JSON response
+            from .rag_utils import extract_analysis_data
+            accuracy_score, extracted_fields = extract_analysis_data(ai_response)
+            
+            # Update analysis fields
+            submitted_file.accuracy_score = accuracy_score
+            submitted_file.extracted_fields = extracted_fields
+            
+            submitted_file.processing_metadata = {
+                'retrieval_method': rag_result.get('retrieval_method', method),
+                'processing_time': rag_result.get('processing_time', 0),
+                'chunks_processed': rag_result.get('chunks_processed', 0),
+                'relevant_chunks': rag_result.get('relevant_chunks', 0),
+                'num_docs_retrieved': rag_result.get('num_docs_retrieved', 0),
+                'doc_sources': rag_result.get('doc_sources', []),
+                'evaluation': rag_result.get('evaluation', {}),
+                'top_k': top_k,
+                'document_info': {
+                    'filename': original_filename,
+                    'text_length': len(document_text),
+                    'extraction_method': extraction_results.get('method', 'unknown'),
+                    'pages': extraction_results.get('pages', 0),
+                    'images_processed': extraction_results.get('images_processed', 0)
+                }
+            }
+            submitted_file.status = 'completed'
+            submitted_file.processed_at = timezone.now()
+            submitted_file.save()
+            
+            logger.info(f"Updated SubmittedFile record {submitted_file.id} with AI response and metadata")
+            
+            # Clean up any temporary files created by extractor
+            try:
+                extractor.cleanup_temp_files()
+                logger.info("Cleaned up extractor temporary files")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup extractor files: {cleanup_error}")
+            
+            # Format response
+            response_data = {
+                "success": True,
+                "submitted_file_id": submitted_file.id,
+                "query": query,
+                "answer": rag_result.get('answer', 'No answer generated'),
+                "accuracy_score": accuracy_score,
+                "extracted_fields": extracted_fields,
+                "retrieval_method": rag_result.get('retrieval_method', method),
+                "processing_time": rag_result.get('processing_time', 0),
+                "chunks_processed": rag_result.get('chunks_processed', 0),
+                "relevant_chunks": rag_result.get('relevant_chunks', 0),
+                "num_docs_retrieved": rag_result.get('num_docs_retrieved', 0),
+                "doc_sources": rag_result.get('doc_sources', []),
+                "evaluation": rag_result.get('evaluation', {}),
+                "document_info": {
+                    "filename": original_filename,
+                    "text_length": len(document_text),
+                    "extraction_method": extraction_results.get('method', 'unknown'),
+                    "pages": extraction_results.get('pages', 0),
+                    "images_processed": extraction_results.get('images_processed', 0)
+                },
+                "file_url": cloudinary_url
+            }
+            
+            # Check if there was an error in RAG processing
+            if 'error' in rag_result:
+                response_data['warning'] = f"RAG processing issue: {rag_result['error']}"
+            
+            logger.info(f"Successfully processed query-document request in {rag_result.get('processing_time', 0):.2f}s")
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as processing_error:
+            logger.error(f"Document processing failed: {str(processing_error)}", exc_info=True)
+            
+            # Update database record with error
+            try:
+                submitted_file.status = 'failed'
+                submitted_file.error_message = str(processing_error)
+                submitted_file.processed_at = timezone.now()
+                submitted_file.save()
+            except Exception as db_error:
+                logger.error(f"Failed to update database record with error: {db_error}")
+            
+            # Clean up any temporary files
+            try:
+                if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                if 'extractor' in locals():
+                    extractor.cleanup_temp_files()
+            except:
+                pass
+            
+            return Response({
+                "error": f"Document processing failed: {str(processing_error)}",
+                "submitted_file_id": submitted_file.id if 'submitted_file' in locals() else None
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in query_document: {str(e)}", exc_info=True)
+        return Response({
+            "error": "An unexpected error occurred while processing your request"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

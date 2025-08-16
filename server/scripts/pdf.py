@@ -588,6 +588,9 @@ class PDFTextExtractor:
             self.logger.warning(f"Failed to clean up temporary files: {e}")
 
 
+# Setup module logger
+logger = logging.getLogger(__name__)
+
 def process_pdf_file(pdf_path: str, output_dir: str = "extracted_texts", use_easyocr: bool = True, use_fallback_ocr: bool = True) -> Dict[str, Any]:
     """
     Process a PDF file and extract all text content.
@@ -618,20 +621,20 @@ def process_pdf_file(pdf_path: str, output_dir: str = "extracted_texts", use_eas
         output_file = extractor.save_extracted_text(results)
         results['output_file'] = output_file
         
-        print(f"PDF text extraction completed!")
-        print(f"Results saved to: {output_file}")
-        print(f"Total pages processed: {results['total_pages']}")
-        print(f"Images found and processed: {results['images_found']}")
-        print(f"Total characters extracted: {len(results['combined_text'])}")
+        logger.info(f"PDF text extraction completed!")
+        logger.info(f"Results saved to: {output_file}")
+        logger.info(f"Total pages processed: {results['total_pages']}")
+        logger.info(f"Images found and processed: {results['images_found']}")
+        logger.info(f"Total characters extracted: {len(results['combined_text'])}")
         
         # Clean up temporary images
         extractor.cleanup_temp_files()
-        print(f"Cleaned up temporary files")
+        logger.info(f"Cleaned up temporary files")
         
         return results
         
     except Exception as e:
-        print(f"Error processing PDF: {e}")
+        logger.error(f"Error processing PDF: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -641,13 +644,18 @@ def main():
     """
     Example usage of the PDF text extraction pipeline.
     """
+    # Setup logging for main execution
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     pdf_path = "sample2.pdf"  # Replace with your PDF path
     
     try:
         results = process_pdf_file(pdf_path)
-        print("PDF processing completed successfully!")
+        logger.info("PDF processing completed successfully!")
     except Exception as e:
-        print(f"PDF processing failed: {e}")
+        logger.error(f"PDF processing failed: {e}")
 
 
 if __name__ == "__main__":

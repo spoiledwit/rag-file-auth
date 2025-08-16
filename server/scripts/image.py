@@ -3,8 +3,12 @@ import numpy as np
 import os
 import argparse
 import json
+import logging
 from typing import Dict, Any
 from pathlib import Path
+
+# Setup module logger
+logger = logging.getLogger(__name__)
 
 class EasyOCRExtractor:
     def __init__(self, enable_gpu: bool = True):
@@ -74,13 +78,13 @@ def process_image_file(image_path: str, output_dir: str = "extracted_texts", sav
         extractor = EasyOCRExtractor(enable_gpu=True)
         result = extractor.extract_text(image_path)
         
-        print(f"Image text extraction completed!")
-        print(f"Confidence: {result['confidence']:.2f}")
-        print(f"Words extracted: {result.get('word_count', 0)}")
-        print(f"Characters extracted: {len(result.get('text', ''))}")
+        logger.info(f"Image text extraction completed!")
+        logger.info(f"Confidence: {result['confidence']:.2f}")
+        logger.info(f"Words extracted: {result.get('word_count', 0)}")
+        logger.info(f"Characters extracted: {len(result.get('text', ''))}")
         
         if 'error' in result:
-            print(f"Error: {result['error']}")
+            logger.error(f"Error: {result['error']}")
             return result
         
         # Save result to file if requested
@@ -109,17 +113,22 @@ def process_image_file(image_path: str, output_dir: str = "extracted_texts", sav
                 f.write(result.get('text', ''))
             
             result['output_file'] = str(output_path)
-            print(f"Results saved to: {output_path}")
+            logger.info(f"Results saved to: {output_path}")
         
         return result
         
     except Exception as e:
-        print(f"Error processing image: {e}")
+        logger.error(f"Error processing image: {e}")
         import traceback
         traceback.print_exc()
         raise
 
 def main():
+    # Setup logging for main execution
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     parser = argparse.ArgumentParser(description='EasyOCR Text Extractor')
     parser.add_argument('image_path', help='Path to image file')
     parser.add_argument('--no-gpu', action='store_true', help='Disable GPU acceleration')
@@ -131,21 +140,21 @@ def main():
         extractor = EasyOCRExtractor(enable_gpu=not args.no_gpu)
         result = extractor.extract_text(args.image_path)
         
-        print(f"Confidence: {result['confidence']:.2f}")
-        print(f"Words extracted: {result.get('word_count', 0)}")
-        print("\nExtracted Text:")
-        print(result['text'])
+        logger.info(f"Confidence: {result['confidence']:.2f}")
+        logger.info(f"Words extracted: {result.get('word_count', 0)}")
+        logger.info("Extracted Text:")
+        logger.info(result['text'])
         
         if 'error' in result:
-            print(f"Error: {result['error']}")
+            logger.error(f"Error: {result['error']}")
         
         if args.save_json:
             with open(args.save_json, 'w', encoding='utf-8') as f:
                 json.dump(result, f, indent=2, ensure_ascii=False)
-            print(f"Results saved to: {args.save_json}")
+            logger.info(f"Results saved to: {args.save_json}")
         
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         return 1
     
     return 0

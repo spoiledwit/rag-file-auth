@@ -23,6 +23,7 @@ class UserProfile(models.Model):
 
 class CategorySchema(models.Model):
     category_name = models.CharField(max_length=100, unique=True)
+    prompt = models.TextField(blank=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -34,39 +35,6 @@ class CategorySchema(models.Model):
         verbose_name = "Category Schema"
         verbose_name_plural = "Category Schemas"
         ordering = ['-created_at']
-
-class MLReferenceFile(models.Model):
-    ml_reference_id = models.CharField(max_length=50, unique=True)
-    file = CloudinaryField('reference_file')
-    file_name = models.CharField(max_length=255)
-    category = models.ForeignKey(
-        CategorySchema,
-        on_delete=models.CASCADE,
-        related_name='ml_reference_files'
-    )
-    description = models.TextField()
-    reasoning_notes = models.TextField(
-        help_text="Why this file is a good reference for this category"
-    )
-    metadata = models.JSONField(
-        default=dict,
-        help_text="Additional metadata like document_type, region, issue_year"
-    )
-    uploaded_by = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE,
-        limit_choices_to={'userprofile__role': 'admin'}
-    )
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    
-    def __str__(self):
-        return f"{self.ml_reference_id} - {self.category.category_name}"
-    
-    class Meta:
-        verbose_name = "ML Reference File"
-        verbose_name_plural = "ML Reference Files"
-        ordering = ['-uploaded_at']
-
 
 class SubmittedFile(models.Model):
     STATUS_CHOICES = [
@@ -83,15 +51,12 @@ class SubmittedFile(models.Model):
     
     file = CloudinaryField('submitted_file')
     file_name = models.CharField(max_length=255)
-    category = models.CharField(
-        max_length=100,
-        help_text="Original category submitted by user"
+    category = models.ForeignKey(
+        CategorySchema,
+        on_delete=models.CASCADE,
+        related_name='submitted_files'
     )
-    final_category = models.CharField(
-        max_length=100, 
-        blank=True,
-        help_text="Final category after AI analysis (may differ from original)"
-    )
+
     uploaded_by = models.ForeignKey(
         User, 
         on_delete=models.CASCADE,
@@ -105,19 +70,34 @@ class SubmittedFile(models.Model):
         blank=True,
         help_text="Accuracy score from 0-100"
     )
-    match = models.CharField(
-        max_length=1, 
-        choices=MATCH_CHOICES, 
-        blank=True,
-        help_text="Y if accuracy >= threshold, N if below"
-    )
+
     extracted_fields = models.JSONField(
         default=dict, 
         blank=True,
-        help_text="OCR extracted data like names, dates, numbers"
     )
     
-    # Processing Status
+    # Document processing fields
+    extracted_text = models.TextField(
+        blank=True,
+        help_text="Full extracted text from the document"
+    )
+    
+    query = models.TextField(
+        blank=True,
+        help_text="User query about the document"
+    )
+    
+    ai_response = models.TextField(
+        blank=True,
+        help_text="AI-generated response to the query"
+    )
+    
+    processing_metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Processing metadata like chunks, retrieval method, evaluation scores"
+    )
+    
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     processed_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(blank=True)
@@ -131,51 +111,6 @@ class SubmittedFile(models.Model):
         ordering = ['-uploaded_at']
 
 
-class AuditLog(models.Model):
-    ACTION_CHOICES = [
-        ('upload', 'File Upload'),
-        ('analysis', 'AI Analysis'),
-        ('re-categorization', 'Category Change'),
-        ('login', 'User Login'),
-        ('admin_action', 'Admin Action'),
-    ]
-    
-    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    
-    # File References
-    submitted_file = models.ForeignKey(
-        SubmittedFile, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True
-    )
-    ml_reference_file = models.ForeignKey(
-        MLReferenceFile, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True
-    )
-    
-    # Audit Details
-    details = models.JSONField(
-        default=dict,
-        help_text="Additional details like from_category, to_category, error_info"
-    )
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    user_agent = models.TextField(blank=True)
-    
-    def __str__(self):
-        return f"{self.action} by {self.user.username} at {self.timestamp}"
-    
-    class Meta:
-        verbose_name = "Audit Log"
-        verbose_name_plural = "Audit Logs"
-        ordering = ['-timestamp']
-
-
-# Signal to create UserProfile when User is created
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -183,45 +118,3 @@ from django.dispatch import receiver
 def create_user_profile(sender, instance, created, **kwargs):
     if created:
         UserProfile.objects.create(user=instance)
-
-@receiver(post_save, sender=User)
-def save_user_profile(sender, instance, **kwargs):
-    if hasattr(instance, 'userprofile'):
-        instance.userprofile.save()
-    else:
-        UserProfile.objects.create(user=instance)
-
-
-
-class ProcessedFile(models.Model):
-    submitted_file = models.OneToOneField(
-        SubmittedFile,
-        on_delete=models.CASCADE,
-        related_name='processed_file'
-    )
-    extracted_text = models.TextField(
-        blank=True,
-        help_text="Text extracted by the universal extractor"
-    )
-    extracted_metadata = models.JSONField(
-        default=dict,
-        help_text="Metadata from universal extractor (e.g., pages, images processed)"
-    )
-    processed_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(
-        max_length=20,
-        choices=[
-            ('completed', 'Completed'),
-            ('failed', 'Failed'),
-        ],
-        default='completed'
-    )
-    error_message = models.TextField(blank=True)
-
-    def __str__(self):
-        return f"Processed: {self.submitted_file.file_name}"
-
-    class Meta:
-        verbose_name = "Processed File"
-        verbose_name_plural = "Processed Files"
-        ordering = ['-processed_at']

@@ -763,6 +763,9 @@ def process_file_universal(file_input: str, output_dir: str = "extracted_texts",
     Returns:
         Dictionary containing extraction results and output file path
     """
+    # Create logger for this function
+    logger = logging.getLogger(__name__)
+    
     extractor = UniversalTextExtractor(
         output_dir=output_dir,
         use_ocr=use_ocr,
@@ -774,7 +777,7 @@ def process_file_universal(file_input: str, output_dir: str = "extracted_texts",
         results = extractor.process_file(file_input)
         
         if 'error' in results:
-            print(f"Error processing file: {results['error']}")
+            logger.error(f"Error processing file: {results['error']}")
             return results
         
         # Save results
@@ -786,36 +789,36 @@ def process_file_universal(file_input: str, output_dir: str = "extracted_texts",
         source_type = "URL" if results.get('is_url', False) else "local file"
         method = results.get('method', 'unknown')
         
-        print(f"\n{file_type} text extraction from {source_type} completed!")
-        print(f"Source: {results['file_input']}")
-        print(f"Method: {method}")
-        print(f"Results saved to: {output_file}")
+        logger.info(f"{file_type} text extraction from {source_type} completed!")
+        logger.info(f"Source: {results['file_input']}")
+        logger.info(f"Method: {method}")
+        logger.info(f"Results saved to: {output_file}")
         
         # Type-specific summary
         if results['file_type'] == 'pdf':
-            print(f"Pages processed: {results.get('pages', 0)}")
-            print(f"Images found: {results.get('images_found', 0)}")
-            print(f"Images processed with OCR: {results.get('images_processed', 0)}")
+            logger.info(f"Pages processed: {results.get('pages', 0)}")
+            logger.info(f"Images found: {results.get('images_found', 0)}")
+            logger.info(f"Images processed with OCR: {results.get('images_processed', 0)}")
         elif results['file_type'] == 'docx':
-            print(f"Paragraphs: {results.get('paragraphs', 0)}")
-            print(f"Tables: {results.get('tables', 0)}")
-            print(f"Images found: {results.get('images_found', 0)}")
+            logger.info(f"Paragraphs: {results.get('paragraphs', 0)}")
+            logger.info(f"Tables: {results.get('tables', 0)}")
+            logger.info(f"Images found: {results.get('images_found', 0)}")
         elif results['file_type'] == 'image':
-            print(f"OCR confidence: {results.get('confidence', 0):.2f}")
-            print(f"Words detected: {results.get('word_count', 0)}")
+            logger.info(f"OCR confidence: {results.get('confidence', 0):.2f}")
+            logger.info(f"Words detected: {results.get('word_count', 0)}")
         
         main_text_len = len(results.get('text', ''))
         ocr_text_len = len(results.get('ocr_text', ''))
-        print(f"Total characters extracted: {main_text_len + ocr_text_len}")
+        logger.info(f"Total characters extracted: {main_text_len + ocr_text_len}")
         
         # Clean up
         extractor.cleanup_temp_files()
-        print("Cleaned up temporary files")
+        logger.info("Cleaned up temporary files")
         
         return results
         
     except Exception as e:
-        print(f"Error processing file: {e}")
+        logger.error(f"Error processing file: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -849,13 +852,18 @@ def main():
         )
         
         if 'error' not in results:
-            print("\nProcessing completed successfully!")
+            logging.info("Processing completed successfully!")
         else:
-            print(f"\nProcessing failed: {results['error']}")
+            logging.error(f"Processing failed: {results['error']}")
             
     except Exception as e:
-        print(f"Processing failed: {e}")
+        logging.error(f"Processing failed: {e}")
 
 
 if __name__ == "__main__":
+    # Setup logger for main execution
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     main()

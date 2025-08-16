@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Any
 
@@ -8,6 +9,13 @@ from typing import Dict, Optional, Any
 from pdf import process_pdf_file
 from docu import process_docx_file
 from image import process_image_file
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class DocumentProcessor:
@@ -26,6 +34,7 @@ class DocumentProcessor:
         """
         self.output_dir = output_dir
         self.use_easyocr = use_easyocr
+        self.logger = logging.getLogger(self.__class__.__name__)
         
         # Ensure output directory exists
         Path(output_dir).mkdir(exist_ok=True)
@@ -78,11 +87,11 @@ class DocumentProcessor:
         Returns:
             Dictionary containing extraction results
         """
-        print(f"Processing document: {file_path}")
+        self.logger.info(f"Processing document: {file_path}")
         
         # Detect file type
         file_type = self.detect_file_type(file_path)
-        print(f"Detected file type: {file_type}")
+        self.logger.info(f"Detected file type: {file_type}")
         
         if file_type == 'unknown':
             supported_exts = ', '.join(self.supported_extensions.keys())
@@ -91,7 +100,7 @@ class DocumentProcessor:
         # Process based on file type
         try:
             if file_type == 'pdf':
-                print("Using PDF processor...")
+                self.logger.info("Using PDF processor...")
                 return process_pdf_file(
                     pdf_path=file_path,
                     output_dir=self.output_dir,
@@ -100,7 +109,7 @@ class DocumentProcessor:
                 )
             
             elif file_type == 'docx':
-                print("Using DOCX processor...")
+                self.logger.info("Using DOCX processor...")
                 return process_docx_file(
                     docx_path=file_path,
                     output_dir=self.output_dir,
@@ -108,7 +117,7 @@ class DocumentProcessor:
                 )
             
             elif file_type == 'image':
-                print("Using image processor...")
+                self.logger.info("Using image processor...")
                 return process_image_file(
                     image_path=file_path,
                     output_dir=self.output_dir,
@@ -116,7 +125,7 @@ class DocumentProcessor:
                 )
             
         except Exception as e:
-            print(f"Error processing {file_type} file: {e}")
+            self.logger.error(f"Error processing {file_type} file: {e}")
             raise
     
     def process_multiple_documents(self, file_paths: list) -> Dict[str, Dict[str, Any]]:
@@ -131,18 +140,18 @@ class DocumentProcessor:
         """
         results = {}
         
-        print(f"Processing {len(file_paths)} documents...")
+        self.logger.info(f"Processing {len(file_paths)} documents...")
         
         for i, file_path in enumerate(file_paths, 1):
-            print(f"\n[{i}/{len(file_paths)}] Processing: {Path(file_path).name}")
+            self.logger.info(f"[{i}/{len(file_paths)}] Processing: {Path(file_path).name}")
             
             try:
                 result = self.process_document(file_path)
                 results[file_path] = result
-                print(f"✅ Successfully processed: {Path(file_path).name}")
+                self.logger.info(f"Successfully processed: {Path(file_path).name}")
                 
             except Exception as e:
-                print(f"❌ Failed to process {Path(file_path).name}: {e}")
+                self.logger.error(f"Failed to process {Path(file_path).name}: {e}")
                 results[file_path] = {
                     'error': str(e),
                     'file_type': self.detect_file_type(file_path) if os.path.exists(file_path) else 'unknown'
@@ -166,41 +175,41 @@ class DocumentProcessor:
         Args:
             results: Results dictionary from document processing
         """
-        print("\n" + "="*60)
-        print("DOCUMENT PROCESSING SUMMARY")
-        print("="*60)
+        self.logger.info("=" * 60)
+        self.logger.info("DOCUMENT PROCESSING SUMMARY")
+        self.logger.info("=" * 60)
         
         if 'error' in results:
-            print(f"❌ Processing failed: {results['error']}")
+            self.logger.error(f"Processing failed: {results['error']}")
             return
         
         # Common fields across all processors
         if 'output_file' in results:
-            print(f"📄 Output file: {results['output_file']}")
+            self.logger.info(f"Output file: {results['output_file']}")
         
         if 'combined_text' in results:
             char_count = len(results['combined_text'])
-            print(f"📝 Total characters extracted: {char_count:,}")
+            self.logger.info(f"Total characters extracted: {char_count:,}")
         
         # PDF-specific summary
         if 'total_pages' in results:
-            print(f"📖 Pages processed: {results['total_pages']}")
-            print(f"🖼️  Images found: {results.get('images_found', 0)}")
+            self.logger.info(f"Pages processed: {results['total_pages']}")
+            self.logger.info(f"Images found: {results.get('images_found', 0)}")
         
         # DOCX-specific summary
         if 'native_text' in results and isinstance(results['native_text'], dict):
             native_text = results['native_text']
-            print(f"📄 Paragraphs extracted: {native_text.get('total_paragraphs', 0)}")
-            print(f"📊 Tables extracted: {native_text.get('total_tables', 0)}")
+            self.logger.info(f"Paragraphs extracted: {native_text.get('total_paragraphs', 0)}")
+            self.logger.info(f"Tables extracted: {native_text.get('total_tables', 0)}")
             if 'images' in results:
-                print(f"🖼️  Images processed: {len(results['images'])}")
+                self.logger.info(f"Images processed: {len(results['images'])}")
         
         # Image-specific summary
         if 'confidence' in results:
-            print(f"🎯 OCR confidence: {results['confidence']:.2f}")
-            print(f"📝 Words extracted: {results.get('word_count', 0)}")
+            self.logger.info(f"OCR confidence: {results['confidence']:.2f}")
+            self.logger.info(f"Words extracted: {results.get('word_count', 0)}")
         
-        print("="*60)
+        self.logger.info("=" * 60)
 
 
 def main():
@@ -259,10 +268,10 @@ Examples:
     
     # List supported extensions if requested
     if args.list_supported:
-        print("Supported file extensions:")
+        logger.info("Supported file extensions:")
         for ext in sorted(processor.get_supported_extensions()):
             file_type = processor.supported_extensions[ext]
-            print(f"  {ext} -> {file_type} processor")
+            logger.info(f"  {ext} -> {file_type} processor")
         return 0
     
     # Process files
@@ -283,21 +292,21 @@ Examples:
             # Print summary for each file
             successful_count = 0
             for file_path, result in results.items():
-                print(f"\n📁 {Path(file_path).name}")
+                logger.info(f"File: {Path(file_path).name}")
                 if 'error' not in result:
                     successful_count += 1
                 processor.print_summary(result)
             
-            print(f"\n✅ Successfully processed {successful_count}/{len(args.files)} files")
+            logger.info(f"Successfully processed {successful_count}/{len(args.files)} files")
         
         return 0
         
     except KeyboardInterrupt:
-        print("\n⚠️  Processing interrupted by user")
+        logger.warning("Processing interrupted by user")
         return 1
         
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        logger.error(f"Error: {e}")
         return 1
 
 
