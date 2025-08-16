@@ -91,22 +91,34 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# Use DATABASE_URL if provided, otherwise default to SQLite
+# Use DATABASE_URL for PostgreSQL configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 if DATABASE_URL:
-    # Parse DATABASE_URL for any database type (PostgreSQL, MySQL, SQLite, etc.)
+    # Parse DATABASE_URL for PostgreSQL
     DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL)
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,  # Connection pooling
+            conn_health_checks=True,  # Enable connection health checks
+        )
     }
+    # Ensure we're using PostgreSQL settings
+    DATABASES['default']['ENGINE'] = 'django.db.backends.postgresql'
 else:
-    # Default SQLite for development
+    # Fallback to PostgreSQL with individual settings if DATABASE_URL not provided
     DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'fileauthai'),
+            'USER': os.getenv('DB_USER', 'postgres'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+            'CONN_MAX_AGE': 600,
+            'CONN_HEALTH_CHECKS': True,
+        }
     }
-}
 
 
 # Password validation
@@ -246,10 +258,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:8080",  # Vue dev server
     "http://127.0.0.1:8080",
-] if DEBUG else []
+] if DEBUG else [
+    "https://fileauthai.credminds.com",
+    "https://fileauthai-admin.credminds.com"
+]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
 
 # Security settings for production
 if not DEBUG:
