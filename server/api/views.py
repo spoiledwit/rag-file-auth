@@ -63,6 +63,8 @@ def index(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health_check(request):
+    from django.views.decorators.csrf import csrf_exempt
+    from django.utils.decorators import method_decorator
     return JsonResponse({"status": "healthy"})
 
 
