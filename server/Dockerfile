@@ -1,0 +1,66 @@
+# Use Python 3.11 slim image as base
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DJANGO_SETTINGS_MODULE=core.settings
+
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # PostgreSQL client
+    libpq-dev \
+    # Build essentials for Python packages
+    gcc \
+    g++ \
+    # Image processing libraries
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    # OCR dependencies
+    tesseract-ocr \
+    # PDF processing
+    poppler-utils \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Copy entrypoint script first and make it executable
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Copy project files
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p staticfiles static extracted_texts temp_extracts
+
+# Collect static files (with WhiteNoise compression)
+RUN python manage.py collectstatic --noinput
+
+# Create a non-root user
+RUN useradd -m -u 1000 django && \
+    chown -R django:django /app
+
+# Switch to non-root user
+USER django
+
+# Expose port
+EXPOSE 8001
+
+# Run with Gunicorn using the entrypoint script
+CMD ["/app/entrypoint.sh"]

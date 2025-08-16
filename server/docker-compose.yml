@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  fileauthai-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fileauthai-server
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      # Override any development settings
+      - DEBUG=False
+      - DJANGO_SETTINGS_MODULE=core.settings
+    volumes:
+      # Mount directories for persistent data
+      - ./extracted_texts:/app/extracted_texts
+      - ./temp_extracts:/app/temp_extracts
+      - ./staticfiles:/app/staticfiles
+      # For development: mount the code directory (comment out in production)
+      # - .:/app
+    networks:
+      - fileauthai-network
+
+networks:
+  fileauthai-network:
+    driver: bridge
+    name: fileauthai-network

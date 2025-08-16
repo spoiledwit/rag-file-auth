@@ -87,3 +87,5 @@ langchain
 pandas
 nltk
 psycopg2-binary==2.9.10
+gunicorn==21.2.0
+whitenoise==6.6.0
