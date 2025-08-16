@@ -35,11 +35,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
-COPY requirements.txt .
+COPY requirements-prod.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements-prod.txt
 
 # Copy entrypoint script first and make it executable
 COPY entrypoint.sh /app/entrypoint.sh

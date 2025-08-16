@@ -1,0 +1,49 @@
+# Core Django & Web Framework
+django==5.2.4
+djangorestframework==3.16.0
+djangorestframework-simplejwt==5.5.0
+django-cors-headers==4.7.0
+django-unfold==0.62.0
+asgiref==3.9.1
+sqlparse==0.5.3
+
+# Database & Storage
+psycopg2-binary==2.9.10
+dj-database-url==3.0.1
+cloudinary==1.44.1
+django-cloudinary-storage==0.3.0
+
+# Document Processing
+pypdf2==3.0.1
+pymupdf==1.26.3
+python-docx==1.2.0
+pillow==11.3.0
+
+# OCR & Computer Vision
+easyocr==1.7.2
+opencv-python==4.12.0.88
+numpy==2.2.6
+
+# ML & AI Libraries
+sentence-transformers
+rank-bm25
+langchain
+pandas
+nltk
+scikit-learn  # For sklearn.metrics used in rag_utils.py
+
+# HTTP & Request Handling
+requests==2.32.4
+urllib3==2.5.0
+certifi==2025.7.14
+charset-normalizer==3.4.2
+idna==3.10
+
+# Environment & Configuration
+python-dotenv==1.1.1
+gunicorn==21.2.0
+whitenoise==6.6.0
+
+# Utilities
+pyyaml==6.0.2
+pyjwt==2.9.0
