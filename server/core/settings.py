@@ -286,3 +286,34 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+
+# CSRF and cookie settings
+# Allow overriding via environment variable (comma-separated list of origins with scheme)
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://fileauthai.credminds.com,https://fileauthai-admin.credminds.com'
+).split(',')
+
+# Ensure cookies are secure in production and set sensible SameSite defaults.
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+
+if not DEBUG:
+    # When running behind HTTPS and cross-site requests (admin on subdomain), set SameSite=None
+    CSRF_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SAMESITE = 'None'
+else:
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SAMESITE = 'Lax'
+
+# If the app is behind a reverse proxy (eg. nginx, load balancer) that sets X-Forwarded-Proto,
+# enable SECURE_PROXY_SSL_HEADER by setting USE_X_FORWARDED_PROTO=true in the environment.
+if os.getenv('USE_X_FORWARDED_PROTO', 'false').lower() in ('1', 'true', 'yes', 'on'):
+    # This tells Django to trust X-Forwarded-Proto when deciding if request.is_secure()
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Optional cookie domain override for cross-subdomain setups. Example: '.credminds.com'
+COOKIE_DOMAIN = os.getenv('COOKIE_DOMAIN')
+if COOKIE_DOMAIN:
+    SESSION_COOKIE_DOMAIN = COOKIE_DOMAIN
+    CSRF_COOKIE_DOMAIN = COOKIE_DOMAIN
