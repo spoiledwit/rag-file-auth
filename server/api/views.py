@@ -30,7 +30,8 @@ from .serializers import (
 )
 from .models import (
     SubmittedFile,
-    CategorySchema
+    CategorySchema,
+    ProcessingTask
 )
 from .serializers import CategorySchemaSerializer
 
@@ -479,25 +480,84 @@ def submit_file(request):
 @permission_classes([IsAuthenticated])
 @parser_classes([JSONParser])
 def ask_rag_question(request):
-    """Handle RAG questions from frontend"""
+    """Handle RAG questions from frontend - now calls FastAPI service for text queries"""
     try:
         question = request.data.get('question')
+        text_content = request.data.get('text', '')
+        method = request.data.get('method', 'hybrid')
+        top_k = int(request.data.get('top_k', 30))
+        
         if not question:
             return Response({"error": "No question provided"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Import your RAG function
-        from .rag_utils import rag_chat
+        if not text_content:
+            return Response({"error": "No text content provided for query"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get response from RAG system
-        response = rag_chat(question)
-        
-        return Response({
-            "answer": response['answer'],
-            "sources": response['doc_sources'],
-            "confidence": response['evaluation']
-        })
+        # Call FastAPI service for text processing
+        try:
+            import requests
+            import os
+            
+            # Get FastAPI service URL from environment or use default
+            fastapi_url = os.getenv('FASTAPI_SERVICE_URL', 'http://localhost:8000')
+            
+            # Prepare data for FastAPI request
+            data = {
+                'text': text_content,
+                'query': question,
+                'method': method,
+                'top_k': top_k
+            }
+            
+            logger.info(f"Sending text query to FastAPI service: {fastapi_url}/query-text")
+            
+            # Call FastAPI text processing service
+            response = requests.post(
+                f"{fastapi_url}/query-text",
+                data=data,
+                timeout=60  # 1 minute timeout for text queries
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"FastAPI service error: {response.status_code} - {response.text}")
+                return Response({
+                    "error": f"Text processing failed: {response.text}"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Parse FastAPI response
+            fastapi_result = response.json()
+            
+            if not fastapi_result.get('success'):
+                logger.error(f"FastAPI text processing failed: {fastapi_result}")
+                return Response({
+                    "error": fastapi_result.get('error', 'Text processing failed')
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Return response in expected format
+            return Response({
+                "answer": fastapi_result.get('answer', 'No answer generated'),
+                "sources": fastapi_result.get('doc_sources', []),
+                "confidence": fastapi_result.get('evaluation', {}),
+                "accuracy_score": fastapi_result.get('accuracy_score', 0.0),
+                "extracted_fields": fastapi_result.get('extracted_fields', {}),
+                "retrieval_method": fastapi_result.get('retrieval_method', method),
+                "processing_time": fastapi_result.get('processing_time', 0)
+            })
+            
+        except requests.Timeout:
+            logger.error("FastAPI service request timed out")
+            return Response({
+                "error": "Text processing timed out. Please try again."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        except requests.RequestException as e:
+            logger.error(f"FastAPI service request failed: {str(e)}")
+            return Response({
+                "error": f"Text processing service unavailable: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
     except Exception as e:
+        logger.error(f"Unexpected error in ask_rag_question: {str(e)}", exc_info=True)
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -506,10 +566,10 @@ def ask_rag_question(request):
 @parser_classes([MultiPartParser, FormParser])
 def query_document(request):
     """
-    Process a document with a user query in a single request.
+    Create an asynchronous task for document processing and return task ID immediately.
     
-    This endpoint combines document upload, text extraction, and RAG processing
-    into a single API call. Files and processing results are saved to the database.
+    This endpoint uploads files to Cloudinary, creates a processing task, and returns
+    the task ID for frontend polling. The actual processing happens asynchronously.
     
     Expected form data:
     - file: The document file (PDF, DOCX, or image)
@@ -519,16 +579,13 @@ def query_document(request):
     - top_k: Number of chunks to retrieve (optional, defaults to 30)
     
     Returns:
-    - answer: AI-generated answer based on document content
-    - retrieval_method: Method used for retrieval
-    - processing_time: Time taken to process the request
-    - chunks_processed: Number of text chunks created from document
-    - relevant_chunks: Number of relevant chunks found
-    - doc_sources: Document sources used
-    - evaluation: Response quality metrics
-    - submitted_file_id: Database record ID
+    - task_id: UUID of the processing task for polling
+    - message: Success message
     """
     try:
+        # Import tasks here to avoid circular imports
+        from .tasks import process_document_async
+        
         # Extract and validate input
         query = request.data.get('query')
         file_obj = request.FILES.get('file')
@@ -552,7 +609,7 @@ def query_document(request):
                 "error": "Invalid method. Use 'semantic', 'keyword', or 'hybrid'."
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        logger.info(f"Processing query-document request: '{query}' with method: {method}")
+        logger.info(f"Creating async task for query-document request: '{query}' with method: {method}")
         
         # Get file details
         original_filename = getattr(file_obj, 'name', 'document')
@@ -603,191 +660,123 @@ def query_document(request):
                 "error": f"File upload failed: {str(upload_error)}"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Create SubmittedFile record in database
-        submitted_file = SubmittedFile.objects.create(
-            file=cloudinary_url,
+        # Create ProcessingTask record
+        task_record = ProcessingTask.objects.create(
+            task_id='',  # Will be updated after Celery task creation
+            user=request.user,
             file_name=original_filename,
+            file_url=cloudinary_url,
             category=category_obj,
-            uploaded_by=request.user,
             query=query,
-            status='processing',
-            extracted_fields={}
+            method=method,
+            top_k=top_k,
+            status='pending',
+            progress_message='Task created, waiting to start...'
         )
         
-        logger.info(f"Created SubmittedFile record with ID: {submitted_file.id}")
+        logger.info(f"Created ProcessingTask record with ID: {task_record.id}")
         
-        # Initialize UniversalTextExtractor for document processing
-        try:
-            extractor = UniversalTextExtractor(
-                output_dir="temp_extracts",
-                use_ocr=True,
-                enable_gpu=True
-            )
-            
-            # Create a temporary file to save the uploaded file for processing
-            import tempfile
-            import os
-            
-            # Create temporary file with proper extension
-            with tempfile.NamedTemporaryFile(
-                delete=False, 
-                suffix=f'.{file_extension}' if file_extension else '.pdf'
-            ) as temp_file:
-                # Reset file pointer and write uploaded file content to temp file
-                file_obj.seek(0)
-                for chunk in file_obj.chunks():
-                    temp_file.write(chunk)
-                temp_file_path = temp_file.name
-            
-            logger.info(f"Created temporary file for processing: {temp_file_path}")
-            
-            # Extract text from the document
-            extraction_results = extractor.process_file(temp_file_path)
-            
-            # Clean up temporary file
-            try:
-                os.unlink(temp_file_path)
-                logger.info("Cleaned up temporary file")
-            except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
-            
-            if 'error' in extraction_results:
-                return Response({
-                    "error": f"Document processing failed: {extraction_results['error']}"
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Get extracted text
-            document_text = extraction_results.get('text', '')
-            if not document_text or len(document_text.strip()) < 10:
-                # Update database record with error
-                submitted_file.status = 'failed'
-                submitted_file.error_message = "No readable text found in the document"
-                submitted_file.processed_at = timezone.now()
-                submitted_file.save()
-                
-                return Response({
-                    "error": "No readable text found in the document. The document might be empty or corrupted.",
-                    "submitted_file_id": submitted_file.id
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            logger.info(f"Extracted {len(document_text)} characters of text from document")
-            
-            # Update database record with extracted text
-            submitted_file.extracted_text = document_text
-            submitted_file.save()
-            
-            # Process document with query using our RAG system
-            from .rag_utils import process_document_with_query
-            
-            rag_result = process_document_with_query(
-                document_text=document_text,
-                query=query,
-                method=method,
-                top_k=top_k
-            )
-            
-            # Update database record with AI response and metadata
-            ai_response = rag_result.get('answer', 'No answer generated')
-            submitted_file.ai_response = ai_response
-            
-            # Extract analysis data from JSON response
-            from .rag_utils import extract_analysis_data
-            accuracy_score, extracted_fields = extract_analysis_data(ai_response)
-            
-            # Update analysis fields
-            submitted_file.accuracy_score = accuracy_score
-            submitted_file.extracted_fields = extracted_fields
-            
-            submitted_file.processing_metadata = {
-                'retrieval_method': rag_result.get('retrieval_method', method),
-                'processing_time': rag_result.get('processing_time', 0),
-                'chunks_processed': rag_result.get('chunks_processed', 0),
-                'relevant_chunks': rag_result.get('relevant_chunks', 0),
-                'num_docs_retrieved': rag_result.get('num_docs_retrieved', 0),
-                'doc_sources': rag_result.get('doc_sources', []),
-                'evaluation': rag_result.get('evaluation', {}),
-                'top_k': top_k,
-                'document_info': {
-                    'filename': original_filename,
-                    'text_length': len(document_text),
-                    'extraction_method': extraction_results.get('method', 'unknown'),
-                    'pages': extraction_results.get('pages', 0),
-                    'images_processed': extraction_results.get('images_processed', 0)
-                }
-            }
-            submitted_file.status = 'completed'
-            submitted_file.processed_at = timezone.now()
-            submitted_file.save()
-            
-            logger.info(f"Updated SubmittedFile record {submitted_file.id} with AI response and metadata")
-            
-            # Clean up any temporary files created by extractor
-            try:
-                extractor.cleanup_temp_files()
-                logger.info("Cleaned up extractor temporary files")
-            except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup extractor files: {cleanup_error}")
-            
-            # Format response
-            response_data = {
-                "success": True,
-                "submitted_file_id": submitted_file.id,
-                "query": query,
-                "answer": rag_result.get('answer', 'No answer generated'),
-                "accuracy_score": accuracy_score,
-                "extracted_fields": extracted_fields,
-                "retrieval_method": rag_result.get('retrieval_method', method),
-                "processing_time": rag_result.get('processing_time', 0),
-                "chunks_processed": rag_result.get('chunks_processed', 0),
-                "relevant_chunks": rag_result.get('relevant_chunks', 0),
-                "num_docs_retrieved": rag_result.get('num_docs_retrieved', 0),
-                "doc_sources": rag_result.get('doc_sources', []),
-                "evaluation": rag_result.get('evaluation', {}),
-                "document_info": {
-                    "filename": original_filename,
-                    "text_length": len(document_text),
-                    "extraction_method": extraction_results.get('method', 'unknown'),
-                    "pages": extraction_results.get('pages', 0),
-                    "images_processed": extraction_results.get('images_processed', 0)
-                },
-                "file_url": cloudinary_url
-            }
-            
-            # Check if there was an error in RAG processing
-            if 'error' in rag_result:
-                response_data['warning'] = f"RAG processing issue: {rag_result['error']}"
-            
-            logger.info(f"Successfully processed query-document request in {rag_result.get('processing_time', 0):.2f}s")
-            return Response(response_data, status=status.HTTP_200_OK)
-            
-        except Exception as processing_error:
-            logger.error(f"Document processing failed: {str(processing_error)}", exc_info=True)
-            
-            # Update database record with error
-            try:
-                submitted_file.status = 'failed'
-                submitted_file.error_message = str(processing_error)
-                submitted_file.processed_at = timezone.now()
-                submitted_file.save()
-            except Exception as db_error:
-                logger.error(f"Failed to update database record with error: {db_error}")
-            
-            # Clean up any temporary files
-            try:
-                if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-                if 'extractor' in locals():
-                    extractor.cleanup_temp_files()
-            except:
-                pass
-            
-            return Response({
-                "error": f"Document processing failed: {str(processing_error)}",
-                "submitted_file_id": submitted_file.id if 'submitted_file' in locals() else None
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Start the async task
+        celery_task = process_document_async.delay(
+            str(task_record.id),
+            cloudinary_url,
+            query,
+            method,
+            top_k
+        )
+        
+        # Update task record with Celery task ID
+        task_record.task_id = celery_task.id
+        task_record.save()
+        
+        logger.info(f"Started Celery task {celery_task.id} for ProcessingTask {task_record.id}")
+        
+        # Return task information for frontend polling
+        return Response({
+            "success": True,
+            "task_id": str(task_record.id),
+            "celery_task_id": celery_task.id,
+            "message": "Document processing task created successfully. Use the task_id to check status.",
+            "status": "pending",
+            "file_name": original_filename,
+            "query": query,
+            "category": category_name,
+            "method": method
+        }, status=status.HTTP_202_ACCEPTED)
             
     except Exception as e:
         logger.error(f"Unexpected error in query_document: {str(e)}", exc_info=True)
         return Response({
-            "error": "An unexpected error occurred while processing your request"
+            "error": "An unexpected error occurred while creating the processing task"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def task_status(request, task_id):
+    """
+    Get the status of a processing task.
+    
+    Args:
+        task_id: UUID of the ProcessingTask
+        
+    Returns:
+        Task status, progress, and results if completed
+    """
+    try:
+        # Get the task record
+        task_record = ProcessingTask.objects.get(id=task_id, user=request.user)
+        
+        # Get Celery task status if task is running
+        celery_task_info = None
+        if task_record.task_id and task_record.status in ['pending', 'processing']:
+            try:
+                from celery.result import AsyncResult
+                celery_task = AsyncResult(task_record.task_id)
+                celery_task_info = {
+                    'state': celery_task.state,
+                    'info': celery_task.info if celery_task.info else {}
+                }
+            except Exception as e:
+                logger.warning(f"Failed to get Celery task status: {e}")
+        
+        # Prepare response data
+        response_data = {
+            'task_id': str(task_record.id),
+            'celery_task_id': task_record.task_id,
+            'status': task_record.status,
+            'progress_percentage': task_record.progress_percentage,
+            'progress_message': task_record.progress_message,
+            'file_name': task_record.file_name,
+            'query': task_record.query,
+            'category': task_record.category.category_name,
+            'method': task_record.method,
+            'created_at': task_record.created_at.isoformat(),
+            'started_at': task_record.started_at.isoformat() if task_record.started_at else None,
+            'completed_at': task_record.completed_at.isoformat() if task_record.completed_at else None,
+        }
+        
+        # Add error message if failed
+        if task_record.status == 'failed':
+            response_data['error_message'] = task_record.error_message
+        
+        # Add result if completed
+        if task_record.status == 'completed':
+            response_data['result'] = task_record.result
+        
+        # Add Celery task info if available
+        if celery_task_info:
+            response_data['celery_status'] = celery_task_info
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except ProcessingTask.DoesNotExist:
+        return Response({
+            'error': 'Task not found or you do not have permission to view it'
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        logger.error(f"Error getting task status: {str(e)}", exc_info=True)
+        return Response({
+            'error': 'An unexpected error occurred while getting task status'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

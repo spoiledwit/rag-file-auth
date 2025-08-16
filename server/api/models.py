@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from django.db import models
 from cloudinary.models import CloudinaryField
+import uuid
 
 
 class UserProfile(models.Model):
@@ -113,6 +114,52 @@ class SubmittedFile(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+class ProcessingTask(models.Model):
+    TASK_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task_id = models.CharField(max_length=255, unique=True, help_text="Celery task ID")
+    task_type = models.CharField(max_length=50, default='document_processing')
+    status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default='pending')
+    
+    # User and file information
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    file_name = models.CharField(max_length=255)
+    file_url = models.URLField()
+    category = models.ForeignKey(CategorySchema, on_delete=models.CASCADE)
+    query = models.TextField()
+    
+    # Processing configuration
+    method = models.CharField(max_length=20, default='hybrid')
+    top_k = models.IntegerField(default=30)
+    
+    # Results
+    result = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Progress tracking
+    progress_percentage = models.IntegerField(default=0)
+    progress_message = models.CharField(max_length=255, blank=True)
+    
+    def __str__(self):
+        return f"Task {self.id} - {self.status}"
+    
+    class Meta:
+        verbose_name = "Processing Task"
+        verbose_name_plural = "Processing Tasks"
+        ordering = ['-created_at']
+
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):

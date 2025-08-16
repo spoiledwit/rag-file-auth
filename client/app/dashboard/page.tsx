@@ -17,27 +17,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import api from "../../lib/api";
 
-type QueryResult = {
+type TaskResponse = {
   success: boolean;
+  task_id: string;
+  celery_task_id: string;
+  message: string;
+  status: string;
+  file_name: string;
   query: string;
-  answer: string;
-  accuracy_score: number;
-  extracted_fields: Record<string, any>;
-  retrieval_method: string;
-  processing_time: number;
-  chunks_processed: number;
-  relevant_chunks: number;
-  evaluation: {
-    overall_score: number;
-    semantic_similarity: number;
-    context_relevance: number;
-  };
-  document_info: {
-    filename: string;
-    text_length: number;
-    extraction_method: string;
-    pages: number;
-  };
+  category: string;
+  method: string;
 };
 
 type Category = {
@@ -51,7 +40,6 @@ export default function DashboardPage() {
   const [file, setFile] = useState<File | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
@@ -143,7 +131,6 @@ export default function DashboardPage() {
 
     setLoading(true);
     setError("");
-    setResult(null);
 
     try {
       const formData = new FormData();
@@ -152,18 +139,18 @@ export default function DashboardPage() {
       formData.append("category", selectedCategory.category_name);
       formData.append("method", "hybrid"); // Default to hybrid retrieval
 
-      const response = await api.post<QueryResult>("/v1/query-document/", formData, {
+      const response = await api.post<TaskResponse>("/v1/query-document/", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
 
-      setResult(response.data);
+      // Redirect to task status page
+      router.push(`/task/${response.data.task_id}`);
     } catch (err: any) {
       setError(
         err.response?.data?.error || "Failed to process your request. Please try again."
       );
-    } finally {
       setLoading(false);
     }
   };
@@ -171,7 +158,6 @@ export default function DashboardPage() {
   const resetForm = () => {
     setFile(null);
     setSelectedCategory(categories.length > 0 ? categories[0] : null);
-    setResult(null);
     setError("");
   };
 
@@ -333,114 +319,6 @@ export default function DashboardPage() {
             </Alert>
           )}
 
-          {/* Results Section */}
-          {result && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                    AI Response
-                  </span>
-                  <div className="flex gap-2">
-                    <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                      {result.processing_time.toFixed(2)}s
-                    </span>
-                    <span className="px-2 py-1 border border-gray-300 text-gray-700 text-xs rounded">
-                      {result.retrieval_method}
-                    </span>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Category Used */}
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500 mb-2">Analysis Category</h4>
-                  <p className="text-sm bg-gray-50 p-3 rounded">{selectedCategory?.category_name || 'Unknown'}</p>
-                </div>
-
-                {/* Answer */}
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500 mb-2">Analysis Results</h4>
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    {(() => {
-                      try {
-                        const parsedAnswer = JSON.parse(result.answer);
-                        return (
-                          <div className="space-y-3">
-                            {Object.entries(parsedAnswer).map(([key, value]) => (
-                              <div key={key} className="flex flex-col sm:flex-row sm:items-start gap-2">
-                                <span className="text-sm font-medium text-blue-700 min-w-[120px] capitalize">
-                                  {key.replace(/_/g, ' ')}:
-                                </span>
-                                <span className="text-sm text-gray-800 flex-1">
-                                  {value === null ? (
-                                    <em className="text-gray-500">Not specified</em>
-                                  ) : (
-                                    String(value)
-                                  )}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      } catch (error) {
-                        // Fallback to original text display if JSON parsing fails
-                        return (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {result.answer}
-                          </p>
-                        );
-                      }
-                    })()}
-                  </div>
-                </div>
-
-                {/* Accuracy Score */}
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500 mb-2">Accuracy Score</h4>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <span className="text-2xl font-bold text-green-700">
-                        {result.accuracy_score?.toFixed(1) || '0.0'}%
-                      </span>
-                      <span className="text-sm text-gray-600">
-                        Accuracy from 0-100
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Document Info */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                  <div className="text-center">
-                    <p className="text-lg font-semibold text-gray-900">
-                      {result.document_info.pages}
-                    </p>
-                    <p className="text-xs text-gray-500">Pages</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-lg font-semibold text-gray-900">
-                      {result.chunks_processed}
-                    </p>
-                    <p className="text-xs text-gray-500">Chunks</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-lg font-semibold text-gray-900">
-                      {result.relevant_chunks}
-                    </p>
-                    <p className="text-xs text-gray-500">Relevant</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-lg font-semibold text-gray-900">
-                      {(result.evaluation.overall_score * 100).toFixed(0)}%
-                    </p>
-                    <p className="text-xs text-gray-500">Confidence</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </main>
     </div>
