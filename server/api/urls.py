@@ -7,7 +7,7 @@ from rest_framework_simplejwt.views import (
 from . import views
 from .views import (
     index, RegisterView, UserProfileView,
-    submit_file, upload_ml_reference, category_list, ask_rag_question, query_document
+    submit_file, upload_ml_reference, category_list, ask_rag_question, query_document, health_check
 )
 
 app_name = 'api'
@@ -15,6 +15,9 @@ app_name = 'api'
 urlpatterns = [
     # Main API endpoint
     path('', index),
+    
+    # Health check endpoint
+    path('health/', health_check, name='health_check'),
     
     # JWT Authentication endpoints
     path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
