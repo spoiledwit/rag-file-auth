@@ -25,29 +25,51 @@ type TaskStatus = {
   file_name: string;
   query: string;
   category: string;
-  method: string;
+  method?: string;
   created_at: string;
   started_at?: string;
   completed_at?: string;
   error_message?: string;
   result?: {
     submitted_file_id: number;
-    answer: string;
+    rag_answer: string;
+    rag_accuracy_score: number;
+    rag_evaluation: {
+      overall_score: number;
+      semantic_similarity?: number;
+      context_relevance?: number;
+      response_length?: number;
+      context_docs_used?: number;
+      context_similarity?: number;
+      word_overlap_score?: number;
+    };
+    processing_time: string;
+    document_storage: {
+      doc_id: string;
+      collection: string;
+      document_info: {
+        filename: string;
+        text_length: number;
+        extraction_method: string;
+        pages: number;
+        images_processed?: number;
+      };
+      chunks_created: number;
+      collection_stats: any;
+    };
+    query_storage: any;
+    collections_used: string[];
+    rag_retrieved_chunks: number;
+    message: string;
+  };
+  submitted_file?: {
+    id: number;
+    ai_response: string;
     accuracy_score: number;
     extracted_fields: Record<string, any>;
-    retrieval_method: string;
-    processing_time: number;
-    evaluation: {
-      overall_score: number;
-      semantic_similarity: number;
-      context_relevance: number;
-    };
-    document_info: {
-      filename: string;
-      text_length: number;
-      extraction_method: string;
-      pages: number;
-    };
+    processing_metadata: Record<string, any>;
+    file_url: string;
+    processed_at?: string;
   };
   celery_status?: {
     state: string;
@@ -325,21 +347,53 @@ export default function TaskStatusPage() {
                   <div className="bg-blue-50 p-4 rounded-lg">
                     {(() => {
                       try {
-                        const parsedAnswer = JSON.parse(taskStatus.result.answer);
+                        const parsedAnswer = JSON.parse(taskStatus.result.rag_answer || taskStatus.submitted_file?.ai_response || '{}');
+                        
+                        const renderValue = (value: any, depth: number = 0): React.ReactNode => {
+                          if (value === null || value === undefined) {
+                            return <em className="text-gray-500">Not specified</em>;
+                          }
+                          
+                          if (typeof value === 'object' && !Array.isArray(value)) {
+                            return (
+                              <div className={`space-y-2 ${depth > 0 ? 'ml-4 pl-3 border-l-2 border-blue-200' : ''}`}>
+                                {Object.entries(value).map(([nestedKey, nestedValue]) => (
+                                  <div key={nestedKey} className="flex flex-col gap-1">
+                                    <span className="text-sm font-medium text-blue-600 capitalize">
+                                      {nestedKey.replace(/_/g, ' ')}:
+                                    </span>
+                                    <div className="text-sm text-gray-800">
+                                      {renderValue(nestedValue, depth + 1)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                          
+                          if (Array.isArray(value)) {
+                            return (
+                              <div className="space-y-1">
+                                {value.map((item, index) => (
+                                  <div key={index} className="text-sm text-gray-800">
+                                    • {renderValue(item, depth + 1)}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                          
+                          return <span className="text-sm text-gray-800">{String(value)}</span>;
+                        };
+                        
                         return (
-                          <div className="space-y-3">
+                          <div className="space-y-4">
                             {Object.entries(parsedAnswer).map(([key, value]) => (
-                              <div key={key} className="flex flex-col sm:flex-row sm:items-start gap-2">
-                                <span className="text-sm font-medium text-blue-700 min-w-[120px] capitalize">
-                                  {key.replace(/_/g, ' ')}:
-                                </span>
-                                <span className="text-sm text-gray-800 flex-1">
-                                  {value === null ? (
-                                    <em className="text-gray-500">Not specified</em>
-                                  ) : (
-                                    String(value)
-                                  )}
-                                </span>
+                              <div key={key} className="space-y-2">
+                                <h5 className="text-sm font-semibold text-blue-700 capitalize border-b border-blue-200 pb-1">
+                                  {key.replace(/_/g, ' ')}
+                                </h5>
+                                {renderValue(value)}
                               </div>
                             ))}
                           </div>
@@ -347,7 +401,7 @@ export default function TaskStatusPage() {
                       } catch (error) {
                         return (
                           <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {taskStatus.result.answer}
+                            {taskStatus.result.rag_answer || taskStatus.submitted_file?.ai_response}
                           </p>
                         );
                       }
@@ -361,40 +415,40 @@ export default function TaskStatusPage() {
                   <div className="bg-green-50 p-4 rounded-lg">
                     <div className="flex items-center justify-between">
                       <span className="text-2xl font-bold text-green-700">
-                        {taskStatus.result.accuracy_score?.toFixed(1) || '0.0'}%
+                        {(taskStatus.result.rag_accuracy_score || taskStatus.submitted_file?.accuracy_score)?.toFixed(1) || '0.0'}%
                       </span>
                       <span className="text-sm text-gray-600">
-                        Processing Time: {taskStatus.result.processing_time?.toFixed(2)}s
+                        RAG Processing Time: {taskStatus.result.processing_time || 'N/A'}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Document Info */}
-                {taskStatus.result.document_info && (
+                {taskStatus.result.document_storage?.document_info && (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
                     <div className="text-center">
                       <p className="text-lg font-semibold text-gray-900">
-                        {taskStatus.result.document_info.pages || 0}
+                        {taskStatus.result.document_storage?.document_info?.pages || 0}
                       </p>
                       <p className="text-xs text-gray-500">Pages</p>
                     </div>
                     <div className="text-center">
                       <p className="text-lg font-semibold text-gray-900">
-                        {taskStatus.result.document_info.text_length || 0}
+                        {taskStatus.result.document_storage?.document_info?.text_length || 0}
                       </p>
                       <p className="text-xs text-gray-500">Characters</p>
                     </div>
                     <div className="text-center">
                       <p className="text-lg font-semibold text-gray-900">
-                        {taskStatus.result.retrieval_method || 'N/A'}
+                        {taskStatus.result.document_storage?.document_info?.extraction_method || 'N/A'}
                       </p>
                       <p className="text-xs text-gray-500">Method</p>
                     </div>
                     <div className="text-center">
                       <p className="text-lg font-semibold text-gray-900">
-                        {taskStatus.result.evaluation?.overall_score ? 
-                          (taskStatus.result.evaluation.overall_score * 100).toFixed(0) + '%' : 'N/A'}
+                        {taskStatus.result.rag_evaluation?.overall_score ? 
+                          (taskStatus.result.rag_evaluation.overall_score * 100).toFixed(0) + '%' : 'N/A'}
                       </p>
                       <p className="text-xs text-gray-500">Confidence</p>
                     </div>

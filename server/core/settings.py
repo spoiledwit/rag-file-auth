@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'cloudinary_storage',
     'cloudinary',
     'corsheaders',  # Enable CORS for frontend integration
+    'django_celery_beat',  # Celery beat scheduler
     
     # Local apps
     'api',
@@ -276,7 +277,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8080",
 ] if DEBUG else [
     "https://fileauthai.credminds.com",
-    "https://fileauthai-admin.credminds.com"
+    "https://fileauthai-admin.credminds.com",
+     "http://localhost:3000",  # React dev server
+    "http://127.0.0.1:3000",
+    "http://localhost:8080",  # Vue dev server
+    "http://127.0.0.1:8080",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -291,7 +296,7 @@ if not DEBUG:
 # Allow overriding via environment variable (comma-separated list of origins with scheme)
 CSRF_TRUSTED_ORIGINS = os.getenv(
     'CSRF_TRUSTED_ORIGINS',
-    'https://fileauthai.credminds.com,https://fileauthai-admin.credminds.com'
+    'https://fileauthai.credminds.com,https://fileauthai-admin.credminds.com,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080'
 ).split(',')
 
 # Ensure cookies are secure in production and set sensible SameSite defaults.
@@ -319,8 +324,8 @@ if COOKIE_DOMAIN:
     CSRF_COOKIE_DOMAIN = COOKIE_DOMAIN
 
 # Celery Configuration
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -331,5 +336,5 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_RESULT_EXPIRES = 3600  # 1 hour
 
-# FastAPI service URL for Celery tasks
-CELERY_FASTAPI_URL = os.getenv('FASTAPI_SERVICE_URL', 'http://localhost:8000')
+# RunPod serverless endpoint URL for Celery tasks
+RUNPOD_PROCESSOR_ENDPOINT_URL = os.getenv('RUNPOD_PROCESSOR_ENDPOINT_URL')

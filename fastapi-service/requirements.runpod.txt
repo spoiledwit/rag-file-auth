@@ -1,4 +1,7 @@
-# FastAPI and core dependencies
+# RunPod SDK
+runpod==1.6.2
+
+# FastAPI and core dependencies (for compatibility)
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
@@ -23,7 +26,7 @@ scikit-image==0.25.2
 scipy==1.16.1
 numpy==2.2.6
 
-# Text processing and RAG
+# Text processing and embeddings
 langchain
 rank-bm25
 nltk

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.models import User, Group
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
-from .models import UserProfile, CategorySchema, SubmittedFile
+from .models import UserProfile, CategorySchema, SubmittedFile, ProcessingTask
 
 # Unregister the default User and Group admin
 admin.site.unregister(User)
@@ -134,6 +134,71 @@ class SubmittedFileAdmin(ModelAdmin):
 
     def has_change_permission(self, request, obj=None):  # noqa: ARG002
         """Prevent admins from editing SubmittedFile records."""
+        return False
+
+# ProcessingTask admin
+@admin.register(ProcessingTask)
+class ProcessingTaskAdmin(ModelAdmin):
+    list_display = [
+        'id', 'task_type', 'status', 'user', 'file_name', 
+        'progress_percentage', 'created_at', 'completed_at'
+    ]
+    list_filter = ['status', 'task_type', 'created_at', 'method']
+    search_fields = ['id', 'task_id', 'file_name', 'user__username', 'query']
+    readonly_fields = [
+        'id', 'task_id', 'created_at', 'started_at', 'completed_at',
+        'result', 'error_message'
+    ]
+    fieldsets = (
+        ('Task Information', {
+            'fields': (
+                'id',
+                'task_id', 
+                'task_type',
+                'status',
+                'progress_percentage',
+                'progress_message'
+            )
+        }),
+        ('File & User Details', {
+            'fields': (
+                'user',
+                'file_name',
+                'file_url',
+                'category',
+                'query'
+            )
+        }),
+        ('Processing Configuration', {
+            'fields': (
+                'method',
+                'top_k'
+            )
+        }),
+        ('Results & Errors', {
+            'fields': (
+                'result',
+                'error_message'
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': (
+                'created_at',
+                'started_at', 
+                'completed_at'
+            )
+        }),
+    )
+    list_display_links = ['id']
+    raw_id_fields = ['user', 'category']
+    
+    def has_add_permission(self, request):
+        """Prevent admins from creating ProcessingTask records manually."""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Allow viewing but prevent editing of ProcessingTask records."""
         return False
 
 # AuditLog admin removed - model no longer exists

@@ -11,35 +11,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (minimal for Django web server)
 RUN apt-get update && apt-get install -y \
     # PostgreSQL client
     libpq-dev \
     # Build essentials for Python packages
     gcc \
     g++ \
-    # Image processing libraries (updated for Debian Trixie)
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    # OCR dependencies
-    tesseract-ocr \
-    # PDF processing
-    poppler-utils \
-    # Additional dependencies for Python packages
+    # Network tools for health checks
     curl \
     # Clean up
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
-COPY requirements-prod.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install -r requirements-prod.txt
+    pip install -r requirements.txt
 
 # Copy project files
 COPY . .

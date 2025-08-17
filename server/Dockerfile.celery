@@ -1,0 +1,57 @@
+# Use Python 3.11 slim image as base
+FROM python:3.11-slim
+
+# Set environment variables for Celery
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DJANGO_SETTINGS_MODULE=core.settings \
+    C_FORCE_ROOT=1
+
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies (minimal for Celery workers)
+RUN apt-get update && apt-get install -y \
+    # PostgreSQL client (for Django DB access)
+    libpq-dev \
+    # Build essentials for Python packages
+    gcc \
+    g++ \
+    # Network tools for health checks
+    curl \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Install additional Celery monitoring tools
+RUN pip install flower
+
+# Copy only necessary project files for Celery
+COPY core/ ./core/
+COPY api/ ./api/
+COPY manage.py .
+
+# Create necessary directories
+RUN mkdir -p extracted_texts temp_extracts logs
+
+# Create a non-root user for Celery
+RUN useradd -m -u 1001 celery && \
+    chown -R celery:celery /app
+
+# Switch to celery user
+USER celery
+
+# Health check script for Celery worker
+COPY --chown=celery:celery celery-healthcheck.sh /app/celery-healthcheck.sh
+RUN chmod +x /app/celery-healthcheck.sh
+
+# Default command (can be overridden in docker-compose)
+CMD ["celery", "-A", "core", "worker", "--loglevel=info", "--concurrency=2"]

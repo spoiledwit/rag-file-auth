@@ -2,9 +2,7 @@ import os
 import logging
 import tempfile
 import time
-import uuid
-from typing import Dict, Any
-from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
@@ -12,57 +10,52 @@ import uvicorn
 
 # Import our processing modules
 from universal_extractor import UniversalTextExtractor
-from rag_utils import process_document_with_query, extract_analysis_data, parse_json_response
+from rag_utils_simplified import process_and_store_document
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Document Processing Service",
-    description="FastAPI serverless function for document OCR, embedding, and RAG processing",
-    version="1.0.0"
+    title="Document Embedding Service",
+    description="FastAPI service for document text extraction and embedding storage in Qdrant",
+    version="2.0.0"
 )
 
 @app.get("/")
 async def root():
-    return {"message": "Document Processing Service", "status": "running"}
+    return {"message": "Document Embedding Service", "status": "running"}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "document-processing"}
+    return {"status": "healthy", "service": "document-embedding"}
 
-@app.post("/process-document")
-async def process_document(
+@app.post("/process-and-store")
+async def process_and_store(
+    task_id: str = Form(...),
     file: UploadFile = File(...),
-    query: str = Form(...),
-    method: str = Form(default="hybrid"),
-    top_k: int = Form(default=30)
+    query_text: str = Form(...),
+    doc_id: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    doc_type: Optional[str] = Form(None)
 ):
     """
-    Process a document with OCR, embedding generation, and RAG query processing.
+    Process both document and query text: extract text from file and process query, 
+    storing embeddings in separate collections with the same task_id.
     
     Args:
+        task_id: Required task identifier for reference by other services
         file: The uploaded document file (PDF, DOCX, image, etc.)
-        query: The user's question about the document
-        method: Retrieval method - "semantic", "keyword", or "hybrid"
-        top_k: Number of chunks to retrieve for context
+        query_text: The text query to process and store
+        doc_id: Optional document identifier (will be auto-generated if not provided)
+        source: Optional source identifier
+        doc_type: Optional document type metadata
         
     Returns:
-        JSON response with answer, sources, and metadata
+        JSON response with storage status for both document and query
     """
     try:
         start_time = time.time()
-        
-        # Validate inputs
-        if not query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-            
-        if method not in ['semantic', 'keyword', 'hybrid']:
-            raise HTTPException(status_code=400, detail="Invalid method. Use 'semantic', 'keyword', or 'hybrid'")
-            
-        if top_k < 1 or top_k > 100:
-            raise HTTPException(status_code=400, detail="top_k must be between 1 and 100")
         
         # Get file extension
         original_filename = file.filename or "document"
@@ -70,7 +63,7 @@ async def process_document(
         if '.' in original_filename:
             file_extension = original_filename.lower().split('.')[-1]
         
-        logger.info(f"Processing file: {original_filename} with query: {query}")
+        logger.info(f"Processing file: {original_filename}")
         
         # Create temporary file to save uploaded content
         with tempfile.NamedTemporaryFile(
@@ -85,6 +78,7 @@ async def process_document(
         logger.info(f"Saved uploaded file to temporary location: {temp_file_path}")
         
         try:
+            # Process 1: File Document
             # Initialize text extractor
             extractor = UniversalTextExtractor(
                 output_dir="temp_extracts",
@@ -98,7 +92,7 @@ async def process_document(
             if 'error' in extraction_results:
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Document processing failed: {extraction_results['error']}"
+                    detail=f"Document extraction failed: {extraction_results['error']}"
                 )
             
             # Get extracted text
@@ -111,23 +105,64 @@ async def process_document(
             
             logger.info(f"Extracted {len(document_text)} characters of text from document")
             
-            # Process document with RAG pipeline
-            rag_result = process_document_with_query(
-                document_text=document_text,
-                query=query,
-                method=method,
-                top_k=top_k
+            # Prepare document metadata
+            doc_metadata = {
+                "task_id": task_id,
+                "content_type": "document",
+                "filename": original_filename,
+                "extraction_method": extraction_results.get('method', 'unknown'),
+                "pages": extraction_results.get('pages', 0),
+                "images_processed": extraction_results.get('images_processed', 0),
+                "upload_timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            if source:
+                doc_metadata["source"] = source
+            if doc_type:
+                doc_metadata["doc_type"] = doc_type
+            
+            # Store document in documents collection
+            doc_storage_result = process_and_store_document(
+                text=document_text,
+                doc_id=doc_id,
+                metadata=doc_metadata,
+                collection_name="documents"
             )
             
-            if 'error' in rag_result:
+            # Process 2: Query Text
+            logger.info(f"Processing query text: {len(query_text)} characters")
+            
+            # Prepare query metadata
+            query_metadata = {
+                "task_id": task_id,
+                "content_type": "query",
+                "query_text": query_text[:200] + "..." if len(query_text) > 200 else query_text,
+                "upload_timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            if source:
+                query_metadata["source"] = source
+            
+            # Store query in queries collection
+            query_storage_result = process_and_store_document(
+                text=query_text,
+                doc_id=f"{task_id}_query",
+                metadata=query_metadata,
+                collection_name="queries"
+            )
+            
+            # Check if both storage operations succeeded
+            if doc_storage_result['status'] == 'error':
                 raise HTTPException(
                     status_code=500,
-                    detail=f"RAG processing failed: {rag_result['error']}"
+                    detail=f"Document storage failed: {doc_storage_result['message']}"
                 )
             
-            # Extract analysis data from AI response
-            ai_response = rag_result.get('answer', 'No answer generated')
-            accuracy_score, extracted_fields = extract_analysis_data(ai_response)
+            if query_storage_result['status'] == 'error':
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Query storage failed: {query_storage_result['message']}"
+                )
             
             # Clean up temporary files
             try:
@@ -138,32 +173,40 @@ async def process_document(
                 logger.warning(f"Failed to cleanup temporary files: {cleanup_error}")
             
             # Calculate total processing time
-            processing_time = time.time() - start_time
+            total_processing_time = time.time() - start_time
             
             # Format response
             response_data = {
                 "success": True,
-                "query": query,
-                "answer": ai_response,
-                "accuracy_score": accuracy_score,
-                "extracted_fields": extracted_fields,
-                "retrieval_method": rag_result.get('retrieval_method', method),
-                "processing_time": processing_time,
-                "chunks_processed": rag_result.get('chunks_processed', 0),
-                "relevant_chunks": rag_result.get('relevant_chunks', 0),
-                "num_docs_retrieved": rag_result.get('num_docs_retrieved', 0),
-                "doc_sources": rag_result.get('doc_sources', []),
-                "evaluation": rag_result.get('evaluation', {}),
-                "document_info": {
-                    "filename": original_filename,
-                    "text_length": len(document_text),
-                    "extraction_method": extraction_results.get('method', 'unknown'),
-                    "pages": extraction_results.get('pages', 0),
-                    "images_processed": extraction_results.get('images_processed', 0)
+                "message": "Document and query successfully processed and stored",
+                "task_id": task_id,
+                "processing_time": f"{total_processing_time:.2f}s",
+                "document_storage": {
+                    "doc_id": doc_storage_result.get('doc_id'),
+                    "collection": "documents",
+                    "chunks_created": doc_storage_result.get('chunks_created', 0),
+                    "collection_stats": doc_storage_result.get('statistics', {}),
+                    "document_info": {
+                        "filename": original_filename,
+                        "text_length": len(document_text),
+                        "extraction_method": extraction_results.get('method', 'unknown'),
+                        "pages": extraction_results.get('pages', 0),
+                        "images_processed": extraction_results.get('images_processed', 0)
+                    }
+                },
+                "query_storage": {
+                    "query_id": query_storage_result.get('doc_id'),
+                    "collection": "queries", 
+                    "chunks_created": query_storage_result.get('chunks_created', 0),
+                    "collection_stats": query_storage_result.get('statistics', {}),
+                    "query_info": {
+                        "text_length": len(query_text),
+                        "query_preview": query_text[:100] + "..." if len(query_text) > 100 else query_text
+                    }
                 }
             }
             
-            logger.info(f"Successfully processed document in {processing_time:.2f}s")
+            logger.info(f"Successfully processed and stored document in {total_processing_time:.2f}s")
             return JSONResponse(content=response_data)
             
         except HTTPException:
@@ -190,98 +233,7 @@ async def process_document(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in process_document: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred while processing your request"
-        )
-
-@app.post("/query-text")
-async def query_text(
-    text: str = Form(...),
-    query: str = Form(...),
-    method: str = Form(default="hybrid"),
-    top_k: int = Form(default=30)
-):
-    """
-    Process raw text with RAG query (no file upload/OCR needed).
-    
-    Args:
-        text: The document text content
-        query: The user's question about the text
-        method: Retrieval method - "semantic", "keyword", or "hybrid"
-        top_k: Number of chunks to retrieve for context
-        
-    Returns:
-        JSON response with answer, sources, and metadata
-    """
-    try:
-        start_time = time.time()
-        
-        # Validate inputs
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="Text content cannot be empty")
-            
-        if not query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-            
-        if method not in ['semantic', 'keyword', 'hybrid']:
-            raise HTTPException(status_code=400, detail="Invalid method. Use 'semantic', 'keyword', or 'hybrid'")
-            
-        if top_k < 1 or top_k > 100:
-            raise HTTPException(status_code=400, detail="top_k must be between 1 and 100")
-        
-        logger.info(f"Processing text query: {query}")
-        
-        # Process text with RAG pipeline
-        rag_result = process_document_with_query(
-            document_text=text,
-            query=query,
-            method=method,
-            top_k=top_k
-        )
-        
-        if 'error' in rag_result:
-            raise HTTPException(
-                status_code=500,
-                detail=f"RAG processing failed: {rag_result['error']}"
-            )
-        
-        # Extract analysis data from AI response
-        ai_response = rag_result.get('answer', 'No answer generated')
-        accuracy_score, extracted_fields = extract_analysis_data(ai_response)
-        
-        # Calculate processing time
-        processing_time = time.time() - start_time
-        
-        # Format response
-        response_data = {
-            "success": True,
-            "query": query,
-            "answer": ai_response,
-            "accuracy_score": accuracy_score,
-            "extracted_fields": extracted_fields,
-            "retrieval_method": rag_result.get('retrieval_method', method),
-            "processing_time": processing_time,
-            "chunks_processed": rag_result.get('chunks_processed', 0),
-            "relevant_chunks": rag_result.get('relevant_chunks', 0),
-            "num_docs_retrieved": rag_result.get('num_docs_retrieved', 0),
-            "doc_sources": rag_result.get('doc_sources', []),
-            "evaluation": rag_result.get('evaluation', {}),
-            "document_info": {
-                "text_length": len(text),
-                "source": "direct_text_input"
-            }
-        }
-        
-        logger.info(f"Successfully processed text query in {processing_time:.2f}s")
-        return JSONResponse(content=response_data)
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in query_text: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error in process_and_store: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while processing your request"

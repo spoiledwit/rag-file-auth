@@ -124,7 +124,7 @@ class ProcessingTask(models.Model):
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    task_id = models.CharField(max_length=255, unique=True, help_text="Celery task ID")
+    task_id = models.CharField(max_length=255, null=True, blank=True, help_text="Celery task ID")
     task_type = models.CharField(max_length=50, default='document_processing')
     status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default='pending')
     

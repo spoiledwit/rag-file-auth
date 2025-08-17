@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: fileauthai-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - fileauthai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: fileauthai-celery-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DEBUG=False
+      - DJANGO_SETTINGS_MODULE=core.settings
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      # Same volumes as main app for shared file access
+      - ./extracted_texts:/app/extracted_texts
+      - ./temp_extracts:/app/temp_extracts
+      - ./logs:/app/logs
+      # For development: mount the code directory (comment out in production)
+      # - .:/app
+    networks:
+      - fileauthai-network
+    depends_on:
+      - redis
+    command: celery -A core worker --loglevel=info --concurrency=2
+    healthcheck:
+      test: ["CMD-SHELL", "/app/celery-healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: fileauthai-celery-beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DEBUG=False
+      - DJANGO_SETTINGS_MODULE=core.settings
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      # Same volumes as main app
+      - ./extracted_texts:/app/extracted_texts
+      - ./temp_extracts:/app/temp_extracts
+      - ./logs:/app/logs
+      # For development: mount the code directory (comment out in production)
+      # - .:/app
+    networks:
+      - fileauthai-network
+    depends_on:
+      - redis
+    command: celery -A core beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+  celery-flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: fileauthai-celery-flower
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    environment:
+      - DEBUG=False
+      - DJANGO_SETTINGS_MODULE=core.settings
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    networks:
+      - fileauthai-network
+    depends_on:
+      - redis
+      - celery-worker
+    command: celery -A core flower --port=5555
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  fileauthai-network:
+    driver: bridge
+    name: fileauthai-network
