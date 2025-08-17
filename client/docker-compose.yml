@@ -11,7 +11,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://fileauthai-admin.credminds.com/api}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://admin-engine2359.jojen.co.uk/api}
     networks:
       - fileauthai-network
     healthcheck:
