@@ -278,6 +278,8 @@ CORS_ALLOWED_ORIGINS = [
 ] if DEBUG else [
     "https://fileauthai.credminds.com",
     "https://fileauthai-admin.credminds.com",
+    "admin-engine2359.jojen.co.uk",
+    "engine2359.jojen.co.uk",
      "http://localhost:3000",  # React dev server
     "http://127.0.0.1:3000",
     "http://localhost:8080",  # Vue dev server
@@ -296,7 +298,7 @@ if not DEBUG:
 # Allow overriding via environment variable (comma-separated list of origins with scheme)
 CSRF_TRUSTED_ORIGINS = os.getenv(
     'CSRF_TRUSTED_ORIGINS',
-    'https://fileauthai.credminds.com,https://fileauthai-admin.credminds.com,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080'
+    'https://fileauthai.credminds.com,https://fileauthai-admin.credminds.com,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080,https://admin-engine2359.jojen.co.uk,https://engine2359.jojen.co.uk'
 ).split(',')
 
 # Ensure cookies are secure in production and set sensible SameSite defaults.
