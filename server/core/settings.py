@@ -278,8 +278,8 @@ CORS_ALLOWED_ORIGINS = [
 ] if DEBUG else [
     "https://fileauthai.credminds.com",
     "https://fileauthai-admin.credminds.com",
-    "admin-engine2359.jojen.co.uk",
-    "engine2359.jojen.co.uk",
+    "https://admin-engine2359.jojen.co.uk",
+    "https://engine2359.jojen.co.uk",
      "http://localhost:3000",  # React dev server
     "http://127.0.0.1:3000",
     "http://localhost:8080",  # Vue dev server
