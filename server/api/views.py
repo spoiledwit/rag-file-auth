@@ -12,6 +12,9 @@ from cloudinary.uploader import upload as cloudinary_upload
 import uuid
 import time
 import logging
+from drf_spectacular.utils import (
+    extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
+)
 logger = logging.getLogger(__name__)
 
 from .models import (
@@ -22,6 +25,13 @@ from .serializers import CategorySchemaSerializer
 
 
 # AUTHENTICATION VIEWS
+@extend_schema(
+    methods=['GET'],
+    summary="API root information",
+    description="Returns basic service metadata and key endpoint shortcuts.",
+    responses={200: OpenApiResponse(description="Root info returned")},
+    tags=["Meta"]
+)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def index(request):
@@ -46,6 +56,12 @@ def index(request):
     })
 
 
+@extend_schema(
+    methods=['GET'],
+    summary="Health check",
+    description="Return a simple healthy status JSON for uptime monitoring.",
+    responses={200: OpenApiResponse(description="Service healthy", response=None)}
+)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health_check(request):
@@ -111,6 +127,13 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
 
+@extend_schema(
+    methods=['GET'],
+    summary="List categories",
+    description="Returns all configured document category schemas.",
+    responses={200: CategorySchemaSerializer(many=True)},
+    tags=["Categories"]
+)
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def category_list(request):
@@ -119,6 +142,28 @@ def category_list(request):
     return Response(serializer.data)
 
 
+@extend_schema(
+    methods=['POST'],
+    summary="Create document processing task",
+    description="Uploads a file, stores metadata, and dispatches an asynchronous processing task. Returns a task ID for polling.",
+    tags=["Processing"],
+    request={'multipart/form-data': {
+        'type': 'object',
+        'properties': {
+            'file': {'type': 'string', 'format': 'binary', 'description': 'PDF, DOCX or image file'},
+            'query': {'type': 'string', 'description': 'User question about the document'},
+            'category': {'type': 'string', 'description': 'Document category (defaults to General)'},
+            'method': {'type': 'string', 'enum': ['semantic', 'keyword', 'hybrid'], 'description': 'Retrieval method'},
+            'top_k': {'type': 'integer', 'description': 'Number of chunks to retrieve'}
+        },
+        'required': ['file', 'query']
+    }},
+    responses={
+        202: OpenApiResponse(description="Task accepted"),
+        400: OpenApiResponse(description="Validation or upload error"),
+        500: OpenApiResponse(description="Unexpected error")
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -225,6 +270,20 @@ def query_document(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@extend_schema(
+    methods=['GET'],
+    summary="Get task status",
+    description="Retrieve processing status and (when complete) the extracted results for a previously created document processing task.",
+    parameters=[
+        OpenApiParameter(name='task_id', description='UUID of the processing task', required=True, type={'type': 'string', 'format': 'uuid'})
+    ],
+    tags=["Processing"],
+    responses={
+        200: OpenApiResponse(description="Task status returned"),
+        404: OpenApiResponse(description="Task not found"),
+        500: OpenApiResponse(description="Unexpected error")
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def task_status(request, task_id):

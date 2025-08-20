@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # Third party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'drf_spectacular',  # OpenAPI schema generation
     'cloudinary_storage',
     'cloudinary',
     'corsheaders',  # Enable CORS for frontend integration
@@ -209,9 +210,41 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DATETIME_FORMAT': '%Y-%m-%d %H:%M:%S',
+}
+
+# drf-spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'FileAuthAI API',
+    'DESCRIPTION': 'API documentation for FileAuthAI endpoints including authentication, document processing and task status.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'CONTACT': {
+        'name': 'FileAuthAI Support',
+        'email': os.getenv('SUPPORT_EMAIL', 'support@example.com')
+    },
+    'LICENSE': {
+        'name': 'Proprietary',
+    },
+    'SCHEMA_PATH_PREFIX': r'/api/',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [
+        {'BearerAuth': []},
+    ],
+    'SECURITY_DEFINITIONS': {
+        'BearerAuth': {
+            'type': 'http',
+            'scheme': 'bearer',
+            'bearerFormat': 'JWT'
+        }
+    },
+    # Custom preprocessing to restrict endpoints shown
+    'PREPROCESSING_HOOKS': [
+        'core.schema.only_selected_endpoints'
+    ],
 }
 
 # JWT Configuration
